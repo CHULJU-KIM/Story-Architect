@@ -3,13 +3,19 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FinalStory, Scene } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 
-const PLACEHOLDER_MUSIC_URL = 'https://storage.googleapis.com/music-aistudio-output/story-architect/anguish-kevin-macleod.mp3';
+const PLACEHOLDER_MUSIC_URL = 'https://storage.googleapis.com/wf-assets/ga-aistudio-template-diffusion/music/cinematic-documentary.mp3';
 
 interface FinalStepProps {
   finalStory: FinalStory | null;
   scenes: Scene[];
   onRestart: () => void;
 }
+
+const MusicIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block mr-2 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-13c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
+    </svg>
+);
 
 const FinalStep: React.FC<FinalStepProps> = ({ finalStory, scenes, onRestart }) => {
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
@@ -18,8 +24,10 @@ const FinalStep: React.FC<FinalStepProps> = ({ finalStory, scenes, onRestart }) 
   const [showControls, setShowControls] = useState(true);
   const [showFullText, setShowFullText] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix: Replace NodeJS.Timeout with ReturnType<typeof setInterval> for browser compatibility.
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Fix: Replace NodeJS.Timeout with ReturnType<typeof setTimeout> for browser compatibility.
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentScene = scenes[currentSceneIndex];
   const SCENE_DURATION = 8000; // 8 seconds per scene
@@ -110,10 +118,22 @@ const FinalStep: React.FC<FinalStepProps> = ({ finalStory, scenes, onRestart }) 
     return (
       <div className="flex-grow flex flex-col items-center justify-center text-center animate-fade-in p-4">
         <h1 className="text-5xl font-bold mb-4 text-indigo-400">{finalStory.title}</h1>
-        <p className="text-lg text-gray-300 mb-8 max-w-2xl">{finalStory.fullText.substring(0, 150)}...</p>
+        <p className="text-lg text-gray-300 mb-6 max-w-2xl">{finalStory.fullText.substring(0, 150)}...</p>
+        
+        <div className="bg-gray-800/50 rounded-lg p-4 mb-8 max-w-2xl w-full border border-gray-700">
+          <h2 className="text-lg font-semibold text-white flex items-center justify-center">
+            <MusicIcon />
+            AI 음악 추천
+          </h2>
+          <p className="text-indigo-300 mt-2">{finalStory.musicRecommendation}</p>
+        </div>
+
         <button onClick={handleStartStory} className="text-2xl py-4 px-8 rounded-full bg-indigo-600 hover:bg-indigo-700 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-indigo-500 shadow-lg">
           ▶ 스토리 시작
         </button>
+        <p className="text-xs text-gray-500 mt-4 max-w-xs">
+            *분위기를 위해 어울리는 배경 음악이 재생됩니다. (AI 추천 음악이 아님)
+        </p>
          <audio ref={audioRef} src={PLACEHOLDER_MUSIC_URL} loop preload="auto" />
       </div>
     );

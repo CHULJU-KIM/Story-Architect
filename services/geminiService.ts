@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality, Type, GenerateContentResponse, Part } from "@google/genai";
 import type { FinalStory } from './types';
 
@@ -39,14 +40,14 @@ const parseDataUrl = (dataUrl: string): { mimeType: string; data: string } => {
     return { mimeType, data: dataPart };
 }
 
-export const generateImageForScene = async (prompt: string, previousImageDataUrl?: string | null): Promise<string> => {
+export const generateImageForScene = async (prompt: string, storyConcept: string, previousImageDataUrl?: string | null): Promise<string> => {
   try {
     if (previousImageDataUrl) {
-      // IMAGE-TO-IMAGE: Use NanoBanana for continuity and editing
+      // IMAGE-TO-IMAGE
       const { mimeType, data } = parseDataUrl(previousImageDataUrl);
       const parts: Part[] = [
         { inlineData: { data, mimeType } },
-        { text: `This is a scene from a story. Generate the very next moment based on the following description. It is crucial to maintain the artistic style, characters, and atmosphere of the provided image to ensure visual continuity. Description: ${prompt}` }
+        { text: `This image is a scene from a story with the concept: "${storyConcept}". Create the very next scene based on this description: "${prompt}". Maintain the same characters, art style, and mood from the input image. Ensure the output is a direct visual continuation. IMPORTANT: The final output image MUST be in a cinematic, widescreen 16:9 aspect ratio.` }
       ];
 
       const response: GenerateContentResponse = await ai.models.generateContent({
@@ -57,19 +58,30 @@ export const generateImageForScene = async (prompt: string, previousImageDataUrl
         },
       });
 
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          // Nano-banana doesn't specify mime type in response, assume PNG.
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
+      const candidate = response.candidates?.[0];
+      
+      if (!candidate) {
+        throw new Error("AI 응답이 비어있습니다. 네트워크나 API 키를 확인해주세요.");
       }
+
+      if (candidate.finishReason && ['SAFETY', 'RECITATION'].includes(candidate.finishReason)) {
+        throw new Error(`이미지 생성이 차단되었습니다 (이유: ${candidate.finishReason}). 프롬프트를 수정해주세요.`);
+      }
+
+      const imagePart = candidate.content?.parts?.find(p => p.inlineData);
+      if (imagePart?.inlineData) {
+        return `data:image/png;base64,${imagePart.inlineData.data}`;
+      }
+      
+      const textPart = candidate.content?.parts?.find(p => p.text)?.text;
+      console.warn("AI returned text instead of an image:", textPart || "No text part found.");
       throw new Error("AI가 이미지를 반환하지 않았습니다. 안전 가이드라인에 위배되었거나 프롬프트가 모호할 수 있습니다.");
 
     } else {
-      // TEXT-TO-IMAGE: Use Imagen for initial generation
+      // TEXT-TO-IMAGE
       const response = await ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
-        prompt: `Create a cinematic, high-quality, and emotionally resonant image for a story based on this description: ${prompt}`,
+        prompt: `Create the very first scene for a story. The overall concept is: "${storyConcept}". The image should be cinematic, high-quality, and emotionally resonant, in a widescreen 16:9 aspect ratio. This first scene is described as: "${prompt}"`,
         config: {
           numberOfImages: 1,
           outputMimeType: 'image/jpeg',
@@ -85,10 +97,57 @@ export const generateImageForScene = async (prompt: string, previousImageDataUrl
     }
   } catch (error) {
     console.error("Error generating image:", error);
-    if (error instanceof Error && error.message.includes('429')) {
-       throw new Error("API 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    if (error instanceof Error) {
+        if (error.message.includes('429')) {
+           throw new Error("API 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        }
+        // Do not re-wrap my custom messages that are already user-friendly.
+        if (error.message.startsWith("AI가") || error.message.startsWith("이미지 생성이") || error.message.startsWith("AI 응답이")) {
+            throw error;
+        }
+        throw new Error(`이미지 생성에 실패했습니다: ${error.message}`);
     }
-    throw new Error(`이미지 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    throw new Error('이미지 생성에 실패했습니다: 알 수 없는 오류');
+  }
+};
+
+export const generateStoryOutline = async (concept: string, sceneCount: number, hasInitialImage: boolean): Promise<string[]> => {
+  const prompt = `
+    A user wants to create a story. Generate a concise, one-sentence description for each scene of the story.
+    The total number of scenes should be exactly ${sceneCount}.
+    The overall story concept is: "${concept}"
+    ${hasInitialImage ? 'The user has provided an initial image of the main character or setting, so the first scene description should naturally follow from that starting point.' : ''}
+    The descriptions should follow a logical narrative arc (beginning, rising action, climax, falling action, resolution).
+    Provide the output as a JSON array of strings. Each string should be a description for one scene.
+  `;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            scenes: {
+              type: Type.ARRAY,
+              description: `An array of exactly ${sceneCount} scene descriptions.`,
+              items: { type: Type.STRING }
+            }
+          },
+          required: ["scenes"]
+        }
+      }
+    });
+    const jsonText = response.text.trim();
+    const result = JSON.parse(jsonText);
+    if (result.scenes && Array.isArray(result.scenes)) {
+      return result.scenes;
+    }
+    throw new Error("Invalid format for story outline from AI.");
+  } catch(error) {
+    console.error("Error generating story outline:", error);
+    throw new Error("스토리 초안 생성에 실패했습니다.");
   }
 };
 

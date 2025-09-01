@@ -10,6 +10,7 @@ interface StorytellingStepProps {
   promptGuide: string;
   onUpdateScene: (sceneId: number, newDescription: string) => void;
   onDeleteScene: (sceneId: number) => void;
+  isAutoGenerating?: boolean;
 }
 
 const UserIcon: React.FC = () => (
@@ -43,7 +44,7 @@ const RetryIcon: React.FC = () => (
     </svg>
 );
 
-const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene, onFinish, promptGuide, onUpdateScene, onDeleteScene }) => {
+const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene, onFinish, promptGuide, onUpdateScene, onDeleteScene, isAutoGenerating }) => {
   const [description, setDescription] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -78,8 +79,10 @@ const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene,
   };
 
   const handleSelectScene = (scene: Scene) => {
-    setSelectedSceneId(scene.id);
-    setEditingDescription(scene.userDescription);
+    if (scene.status !== 'generating' && scene.status !== 'pending') {
+        setSelectedSceneId(scene.id);
+        setEditingDescription(scene.userDescription);
+    }
   };
   
   const handleUpdateSubmit = () => {
@@ -88,11 +91,20 @@ const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene,
           setSelectedSceneId(null);
       }
   };
+  
+  const handleRetryScene = (scene: Scene) => {
+      onUpdateScene(scene.id, scene.userDescription);
+  };
 
   const selectedScene = scenes.find(s => s.id === selectedSceneId);
 
   return (
-    <div className="flex flex-col flex-grow h-full max-h-[85vh]">
+    <div className="flex flex-col flex-grow h-full max-h-[85vh] relative">
+      {isAutoGenerating && (
+        <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-20 flex items-center justify-center">
+          <LoadingSpinner text="AI가 전체 스토리 초안을 생성 중입니다..." size="lg" />
+        </div>
+      )}
       <div className="flex-grow p-4 bg-gray-800 rounded-t-xl overflow-y-auto">
         {/* Main Content Area: Editor or Add Scene Form */}
         {selectedScene ? (
@@ -168,16 +180,22 @@ const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene,
             <div key={scene.id} className="flex-shrink-0 w-40 text-center relative group">
               <div
                 onClick={() => handleSelectScene(scene)}
-                className={`aspect-video rounded-lg overflow-hidden bg-gray-700 flex items-center justify-center cursor-pointer border-2 ${selectedSceneId === scene.id ? 'border-indigo-500' : 'border-transparent'} hover:border-indigo-400 transition-all`}
+                className={`aspect-video rounded-lg overflow-hidden bg-gray-700 flex items-center justify-center border-2 ${selectedSceneId === scene.id ? 'border-indigo-500' : 'border-transparent'} ${scene.status === 'generating' || scene.status === 'pending' ? 'cursor-default' : 'cursor-pointer hover:border-indigo-400'} transition-all`}
               >
                 {scene.status === 'generating' && <LoadingSpinner size="sm" text="생성 중" />}
-                {scene.status === 'error' && <div className="text-red-400 text-xs p-2">오류</div>}
+                {scene.status === 'pending' && <div className="text-gray-400 text-xs p-2">대기 중</div>}
+                {scene.status === 'error' && <div className="text-red-400 text-xs p-2 text-center">오류 발생</div>}
                 {scene.generatedImage && <img src={scene.generatedImage} alt={`Scene ${index + 1}`} className="w-full h-full object-cover" />}
                 {scene.status === 'done' && !scene.generatedImage && <div className="text-gray-400 text-xs p-2">글로만 시작</div>}
               </div>
               <p className="text-xs text-gray-400 mt-1 truncate">{scene.userDescription}</p>
               <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => handleSelectScene(scene)} className="p-1.5 bg-gray-800/70 rounded-full text-white hover:bg-indigo-600"><EditIcon /></button>
+                {scene.status === 'error' && (
+                    <button onClick={() => handleRetryScene(scene)} className="p-1.5 bg-gray-800/70 rounded-full text-white hover:bg-green-600" title="재시도"><RetryIcon /></button>
+                )}
+                {scene.status !== 'generating' && scene.status !== 'pending' && (
+                    <button onClick={() => handleSelectScene(scene)} className="p-1.5 bg-gray-800/70 rounded-full text-white hover:bg-indigo-600" title="편집"><EditIcon /></button>
+                )}
               </div>
               {scene.userProvidedImage && <div className="absolute top-1 left-1 p-1.5 bg-gray-800/70 rounded-full text-white"><UserIcon /></div>}
             </div>
@@ -186,7 +204,7 @@ const StorytellingStep: React.FC<StorytellingStepProps> = ({ scenes, onAddScene,
         </div>
         <button
           onClick={onFinish}
-          disabled={scenes.filter(s => s.status === 'done').length < 2}
+          disabled={scenes.filter(s => s.status === 'done').length < 2 || scenes.some(s=>s.status !== 'done')}
           className="mt-4 w-full py-3 px-4 rounded-md shadow-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
         >
           스토리 완성하기
