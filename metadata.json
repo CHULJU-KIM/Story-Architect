@@ -1,0 +1,5 @@
+{
+  "name": "AI Story Architect",
+  "description": "An innovative app to visualize user stories as sequential images using the Gemini API. Users provide an initial image and build a story through Korean conversation, generating a visually continuous narrative with music recommendations.",
+  "requestFramePermissions": []
+}
